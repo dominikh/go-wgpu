@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/cgo"
-	"strings"
 	"structs"
 	"sync"
 	"unsafe"
@@ -1171,7 +1170,7 @@ type ShaderModuleDescriptor struct {
 	Source ShaderSource
 }
 
-func (dev *Device) pushErrorScope(filter ErrorFilter) {
+func (dev *Device) PushErrorScope(filter ErrorFilter) {
 	C.wgpuDevicePushErrorScope(dev.hnd, C.WGPUErrorFilter(filter))
 }
 
@@ -1180,57 +1179,44 @@ type Error struct {
 	Message string
 }
 
-func (dev *Device) popErrorScope() error {
-	var ret popErrorScopeResult
-	hnd := cgo.NewHandle(&ret)
-	defer hnd.Delete()
-	C.wgpuDevicePopErrorScope(dev.hnd, fp(C.popErrorScopeCallback), up(&hnd))
-	switch len(ret.errors) {
-	case 0:
-		return nil
-	case 1:
-		if ret.errors[0].Type == ErrorTypeNoError {
-			return nil
-		}
-		fallthrough
-	default:
-		return Errors(ret.errors)
-	}
-}
+func (dev *Device) PopErrorScope() error {
+	ret := calloc[popErrorScopeResult]()
+	defer free(ret)
 
-type Errors []Error
-
-func (errs Errors) Error() string {
+	C.wgpuDevicePopErrorScope(dev.hnd, fp(C.popErrorScopeCallback), up(ret))
 	// wgpu generates quite verbose errors that span multiple lines and that
 	// begin with the kind of error. Therefore we don't have to do anything but
 	// return the messages.
-	switch len(errs) {
-	case 0:
-		panic("treated empty Errors as error")
-	case 1:
-		return errs[0].Message
+	switch ret.typ {
+	case C.WGPUErrorType_NoError:
+		return nil
+	case C.WGPUErrorType_Validation:
+		return ValidationError{C.GoString(ret.msg)}
+	case C.WGPUErrorType_OutOfMemory:
+		return OutOfMemoryError{C.GoString(ret.msg)}
+	case C.WGPUErrorType_Internal:
+		return InternalError{C.GoString(ret.msg)}
+	case C.WGPUErrorType_Unknown:
+		return UnknownError{C.GoString(ret.msg)}
+	case C.WGPUErrorType_DeviceLost:
+		// As we understand it, device lost should never be returned by
+		// PopErrorScope and should only trigger the device lost callback.
+		panic("unexpected 'device lost' error")
 	default:
-		var sb strings.Builder
-		fmt.Fprintf(&sb, "%d errors:", len(errs))
-		for _, err := range errs {
-			fmt.Fprintln(&sb, err.Message)
-			fmt.Fprintln(&sb)
-		}
-		return sb.String()
+		return UnknownError{C.GoString(ret.msg)}
 	}
 }
 
 type popErrorScopeResult struct {
-	errors []Error
+	typ C.WGPUErrorType
+	msg *C.char
 }
 
 //export popErrorScopeCallback
 func popErrorScopeCallback(typ C.WGPUErrorType, msg *C.char, data unsafe.Pointer) {
-	res := (*cgo.Handle)(data).Value().(*popErrorScopeResult)
-	res.errors = append(res.errors, Error{
-		Type:    ErrorType(typ),
-		Message: C.GoString(msg),
-	})
+	res := (*popErrorScopeResult)(data)
+	res.typ = typ
+	res.msg = msg
 }
 
 type PipelineLayoutDescriptor struct {

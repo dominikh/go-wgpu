@@ -30,14 +30,13 @@ import (
 type fp = *[0]byte
 type up = unsafe.Pointer
 
-//go:generate stringer -type requestAdapterStatus,requestDeviceStatus,PowerPreference,BackendType,AdapterType,DeviceLostReason,ErrorFilter,ErrorType,PrimitiveTopology,IndexFormat,FrontFace,CullMode,TextureFormat,VertexFormat,CompareFunction,StencilOperation,BlendOperation,BlendFactor,ColorWriteMask,VertexStepMode,PresentMode,CompositeAlphaMode,TextureUsage,TextureViewDimension,TextureAspect,LoadOp,StoreOp,QueryType,BufferUsage,MapMode,BufferMapState,ShaderStage,BufferBindingType,SamplerBindingType,TextureSampleType,StorageTextureAccess,TextureDimension,AddressMode,FilterMode,MipmapFilterMode -linecomment -output webgpu1_string.go
+//go:generate stringer -type requestAdapterStatus,requestDeviceStatus,PowerPreference,BackendType,AdapterType,DeviceLostReason,ErrorFilter,PrimitiveTopology,IndexFormat,FrontFace,CullMode,TextureFormat,VertexFormat,CompareFunction,StencilOperation,BlendOperation,BlendFactor,ColorWriteMask,VertexStepMode,PresentMode,CompositeAlphaMode,TextureUsage,TextureViewDimension,TextureAspect,LoadOp,StoreOp,QueryType,BufferUsage,MapMode,BufferMapState,ShaderStage,BufferBindingType,SamplerBindingType,TextureSampleType,StorageTextureAccess,TextureDimension,AddressMode,FilterMode,MipmapFilterMode -linecomment -output webgpu1_string.go
 type requestAdapterStatus uint32
 type PowerPreference uint32
 type BackendType uint32
 type AdapterType uint32
 type DeviceLostReason uint32
 type ErrorFilter uint32
-type ErrorType uint32
 type PrimitiveTopology uint32
 type IndexFormat uint32
 type FrontFace uint32
@@ -152,15 +151,6 @@ const (
 	ErrorFilterValidation  ErrorFilter = C.WGPUErrorFilter_Validation  // Validation
 	ErrorFilterOutOfMemory ErrorFilter = C.WGPUErrorFilter_OutOfMemory // OutOfMemory
 	ErrorFilterInternal    ErrorFilter = C.WGPUErrorFilter_Internal    // Internal
-)
-
-const (
-	ErrorTypeNoError     ErrorType = C.WGPUErrorType_NoError     // NoError
-	ErrorTypeValidation  ErrorType = C.WGPUErrorType_Validation  // Validation
-	ErrorTypeOutOfMemory ErrorType = C.WGPUErrorType_OutOfMemory // OutOfMemory
-	ErrorTypeInternal    ErrorType = C.WGPUErrorType_Internal    // Internal
-	ErrorTypeUnknown     ErrorType = C.WGPUErrorType_Unknown     // Unknown
-	ErrorTypeDeviceLost  ErrorType = C.WGPUErrorType_DeviceLost  // DeviceLost
 )
 
 const (
@@ -1172,11 +1162,6 @@ type ShaderModuleDescriptor struct {
 
 func (dev *Device) PushErrorScope(filter ErrorFilter) {
 	C.wgpuDevicePushErrorScope(dev.hnd, C.WGPUErrorFilter(filter))
-}
-
-type Error struct {
-	Type    ErrorType
-	Message string
 }
 
 func (dev *Device) PopErrorScope() error {

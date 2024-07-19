@@ -2038,6 +2038,8 @@ type BindGroupLayoutEntry struct {
 	Sampler        *SamplerBindingLayout
 	Texture        *TextureBindingLayout
 	StorageTexture *StorageTextureBindingLayout
+
+	Count uint32
 }
 
 type BufferBindingLayout struct {
@@ -2070,6 +2072,8 @@ type BindGroupLayoutDescriptor struct {
 func (dev *Device) CreateBindGroupLayout(desc *BindGroupLayoutDescriptor) *BindGroupLayout {
 	centries := callocn[C.WGPUBindGroupLayoutEntry](len(desc.Entries))
 	defer freen(centries)
+	cextras := callocn[C.WGPUBindGroupLayoutEntryExtras](len(desc.Entries))
+	defer freen(cextras)
 	cdesc := valloc(C.WGPUBindGroupLayoutDescriptor{
 		label:      getString(desc.Label),
 		entryCount: C.size_t(len(desc.Entries)),
@@ -2107,6 +2111,10 @@ func (dev *Device) CreateBindGroupLayout(desc *BindGroupLayoutDescriptor) *BindG
 				multisampled:  toBool(e.Texture.Multisampled),
 			}
 		}
+		cextra := &cextras[i]
+		cextra.chain.sType = C.WGPUSType_BindGroupLayoutEntryExtras
+		cextra.count = C.uint32_t(e.Count)
+		ce.nextInChain = &cextra.chain
 	}
 
 	return safeish.Cast[*BindGroupLayout](C.wgpuDeviceCreateBindGroupLayout(dev.hnd, cdesc))
@@ -2119,6 +2127,10 @@ type BindGroupEntry struct {
 	Size        uint64
 	Sampler     *Sampler     // nullable
 	TextureView *TextureView // nullable
+
+	Buffers      []*Buffer
+	Samplers     []*Sampler
+	TextureViews []*TextureView
 }
 
 type BindGroupDescriptor struct {
@@ -2130,6 +2142,8 @@ type BindGroupDescriptor struct {
 func (dev *Device) CreateBindGroup(desc *BindGroupDescriptor) *BindGroup {
 	centries := callocn[C.WGPUBindGroupEntry](len(desc.Entries))
 	defer freen(centries)
+	cextras := callocn[C.WGPUBindGroupEntryExtras](len(desc.Entries))
+	defer freen(cextras)
 	cdesc := valloc(C.WGPUBindGroupDescriptor{
 		label:      getString(desc.Label),
 		layout:     (*C.struct_WGPUBindGroupLayoutImpl)(desc.Layout),
@@ -2139,6 +2153,29 @@ func (dev *Device) CreateBindGroup(desc *BindGroupDescriptor) *BindGroup {
 	defer free(cdesc)
 
 	for i, e := range desc.Entries {
+		cextra := &cextras[i]
+		cextra.chain.sType = C.WGPUSType_BindGroupEntryExtras
+		cextra.bufferCount = C.size_t(len(e.Buffers))
+		cextra.samplerCount = C.size_t(len(e.Samplers))
+		cextra.textureViewCount = C.size_t(len(e.TextureViews))
+		if len(e.Buffers) > 0 {
+			a := callocn[C.WGPUBuffer](len(e.Buffers))
+			defer freen(a)
+			copy(a, safeish.SliceCast[[]C.WGPUBuffer](e.Buffers))
+			cextra.buffers = unsafe.SliceData(a)
+		}
+		if len(e.Samplers) > 0 {
+			a := callocn[C.WGPUSampler](len(e.Samplers))
+			defer freen(a)
+			copy(a, safeish.SliceCast[[]C.WGPUSampler](e.Samplers))
+			cextra.samplers = unsafe.SliceData(a)
+		}
+		if len(e.TextureViews) > 0 {
+			a := callocn[C.WGPUTextureView](len(e.TextureViews))
+			defer freen(a)
+			copy(a, safeish.SliceCast[[]C.WGPUTextureView](e.TextureViews))
+			cextra.textureViews = unsafe.SliceData(a)
+		}
 		centries[i] = C.WGPUBindGroupEntry{
 			binding:     C.uint32_t(e.Binding),
 			buffer:      e.Buffer.c(),
@@ -2147,6 +2184,7 @@ func (dev *Device) CreateBindGroup(desc *BindGroupDescriptor) *BindGroup {
 			sampler:     e.Sampler.c(),
 			textureView: e.TextureView.c(),
 		}
+		centries[i].nextInChain = &cextra.chain
 	}
 
 	return safeish.Cast[*BindGroup](C.wgpuDeviceCreateBindGroup(dev.hnd, cdesc))

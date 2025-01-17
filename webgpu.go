@@ -538,17 +538,19 @@ type RenderBundle C.struct_WGPURenderBundleImpl
 type RenderBundleEncoder C.struct_WGPURenderBundleEncoderImpl
 
 var (
+	ErrDeviceLost = errors.New("device lost")
+	ErrUnknown    = errors.New("unknown error")
+)
+
+var (
 	ErrCurrentTextureTimeout     = errors.New("timeout")
 	ErrCurrentTextureOutdated    = errors.New("outdated")
 	ErrCurrentTextureLost        = errors.New("lost")
 	ErrCurrentTextureOutOfMemory = errors.New("out of memory")
-	ErrCurrentTextureDeviceLost  = errors.New("device lost")
 )
 
 var (
 	ErrMapValidationError         = errors.New("validation error")
-	ErrMapUnknown                 = errors.New("unknown error")
-	ErrMapDeviceLost              = errors.New("device lost")
 	ErrMapDestroyedBeforeCallback = errors.New("destroyed before callback")
 	ErrMapUnmappedBeforeCallback  = errors.New("unmapped before callback")
 	ErrMapMappingAlreadyPending   = errors.New("mapping already pending")
@@ -1632,7 +1634,7 @@ func (s *Surface) CurrentTexture() (SurfaceTexture, error) {
 	case C.WGPUSurfaceGetCurrentTextureStatus_OutOfMemory:
 		return SurfaceTexture{}, ErrCurrentTextureOutOfMemory
 	case C.WGPUSurfaceGetCurrentTextureStatus_DeviceLost:
-		return SurfaceTexture{}, ErrCurrentTextureDeviceLost
+		return SurfaceTexture{}, ErrDeviceLost
 	default:
 		panic(fmt.Sprintf("invalid status %d", ret.status))
 	}
@@ -1978,9 +1980,9 @@ func mapCallback(status C.WGPUBufferMapAsyncStatus, data unsafe.Pointer) {
 	case C.WGPUBufferMapAsyncStatus_ValidationError:
 		err = ErrMapValidationError
 	case C.WGPUBufferMapAsyncStatus_Unknown:
-		err = ErrMapUnknown
+		err = ErrUnknown
 	case C.WGPUBufferMapAsyncStatus_DeviceLost:
-		err = ErrMapDeviceLost
+		err = ErrDeviceLost
 	case C.WGPUBufferMapAsyncStatus_DestroyedBeforeCallback:
 		err = ErrMapDestroyedBeforeCallback
 	case C.WGPUBufferMapAsyncStatus_UnmappedBeforeCallback:

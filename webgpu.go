@@ -1577,6 +1577,8 @@ type SurfaceConfiguration struct {
 	Width       uint32
 	Height      uint32
 	PresentMode PresentMode
+
+	DesiredMaximumFrameLatency uint32
 }
 
 func (s *Surface) Configure(dev *Device, config *SurfaceConfiguration) {
@@ -1596,6 +1598,14 @@ func (s *Surface) Configure(dev *Device, config *SurfaceConfiguration) {
 		presentMode:     C.WGPUPresentMode(config.PresentMode),
 	})
 	defer free(cdesc)
+
+	if config.DesiredMaximumFrameLatency != 0 {
+		cextra := calloc[C.WGPUSurfaceConfigurationExtras]()
+		defer free(cextra)
+		cextra.chain.sType = C.WGPUSType_SurfaceConfigurationExtras
+		cextra.desiredMaximumFrameLatency = C.WGPUBool(config.DesiredMaximumFrameLatency)
+		cdesc.nextInChain = &cextra.chain
+	}
 
 	C.wgpuSurfaceConfigure(s.c(), cdesc)
 }

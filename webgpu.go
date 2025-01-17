@@ -11,6 +11,7 @@ package wgpu
 // void deviceLostCallback(WGPUDeviceLostReason reason, char *msg, uintptr_t hnd);
 // void popErrorScopeCallback(WGPUErrorType type, char *message, void *userdata);
 // void mapCallback(WGPUBufferMapAsyncStatus status, void *userdata);
+// void doneCallback(WGPUQueueWorkDoneStatus status, void *userdata);
 // void uncapturedErrorCallback(WGPUErrorType type, char *message, void *userdata);
 import "C"
 
@@ -1934,6 +1935,34 @@ func (enc *CommandEncoder) ClearBuffer(buf *Buffer, offset, size uint64) {
 	C.wgpuCommandEncoderClearBuffer(enc.c(), buf.c(), C.uint64_t(offset), C.uint64_t(size))
 }
 
+func (q *Queue) OnSubmittedWorkDone(dev *Device) <-chan error {
+	ch := make(chan error, 1)
+	dev.mapMu.Lock()
+	dev.mapCounter++
+	id := dev.mapCounter
+	var pinner runtime.Pinner
+	pinner.Pin(dev)
+	dev.mapHandles[id] = struct {
+		pinner runtime.Pinner
+		ch     chan<- error
+	}{
+		pinner: pinner,
+		ch:     ch,
+	}
+	data := calloc[callbackData]()
+	*data = callbackData{
+		dev: dev,
+		id:  id,
+	}
+	dev.mapMu.Unlock()
+	C.wgpuQueueOnSubmittedWorkDone(
+		q.c(),
+		fp(C.doneCallback),
+		up(data),
+	)
+	return ch
+}
+
 func (buf *Buffer) Map(dev *Device, mode MapMode, offset int, size int) <-chan error {
 	ch := make(chan error, 1)
 	dev.mapMu.Lock()
@@ -1948,8 +1977,8 @@ func (buf *Buffer) Map(dev *Device, mode MapMode, offset int, size int) <-chan e
 		pinner: pinner,
 		ch:     ch,
 	}
-	data := calloc[mapCallbackData]()
-	*data = mapCallbackData{
+	data := calloc[callbackData]()
+	*data = callbackData{
 		dev: dev,
 		id:  id,
 	}
@@ -1965,14 +1994,14 @@ func (buf *Buffer) Map(dev *Device, mode MapMode, offset int, size int) <-chan e
 	return ch
 }
 
-type mapCallbackData struct {
+type callbackData struct {
 	dev *Device
 	id  uintptr
 }
 
 //export mapCallback
 func mapCallback(status C.WGPUBufferMapAsyncStatus, data unsafe.Pointer) {
-	d := *(*mapCallbackData)(data)
+	d := *(*callbackData)(data)
 	C.free(data)
 
 	d.dev.mapMu.Lock()
@@ -2003,6 +2032,36 @@ func mapCallback(status C.WGPUBufferMapAsyncStatus, data unsafe.Pointer) {
 		err = ErrMapOffsetOutOfRange
 	case C.WGPUBufferMapAsyncStatus_SizeOutOfRange:
 		err = ErrMapSizeOutOfRange
+	default:
+		panic(fmt.Sprintf("invalid status %d", status))
+	}
+	hnd.ch <- err
+}
+
+//export doneCallback
+func doneCallback(status C.WGPUQueueWorkDoneStatus, data unsafe.Pointer) {
+	d := *(*callbackData)(data)
+	C.free(data)
+
+	d.dev.mapMu.Lock()
+	hnd, ok := d.dev.mapHandles[d.id]
+	delete(d.dev.mapHandles, d.id)
+	d.dev.mapMu.Unlock()
+	if !ok {
+		panic(fmt.Sprintf("internal error: missing handle for id %d", d.id))
+	}
+
+	hnd.pinner.Unpin()
+	var err error
+	switch status {
+	case C.WGPUQueueWorkDoneStatus_Success:
+	case C.WGPUQueueWorkDoneStatus_Error:
+		// XXX proper error message
+		err = errors.New("some kind of error")
+	case C.WGPUQueueWorkDoneStatus_Unknown:
+		err = ErrUnknown
+	case C.WGPUQueueWorkDoneStatus_DeviceLost:
+		err = ErrDeviceLost
 	default:
 		panic(fmt.Sprintf("invalid status %d", status))
 	}
